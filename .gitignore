@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Saída gerada pelo Gravador de Passos (gravações de teste do usuário)
+teste_html/
+gravacao_*.html
+gravacao_*.zip
+*_files/
+
+# Ambiente virtual
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
