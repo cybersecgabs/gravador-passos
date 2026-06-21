@@ -2,9 +2,11 @@ import os
 import queue
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from typing import List, Optional, Tuple
 
+from PIL import Image
 from pynput import mouse
 from pynput.keyboard import Key, KeyCode
 
@@ -84,6 +86,7 @@ class Recorder:
         self.gui_rect: Optional[Tuple[int, int, int, int]] = None
         self.started_at: Optional[datetime] = None
         self.ended_at: Optional[datetime] = None
+        self._input_blocked = False
 
         self._lock = threading.Lock()
         self._mouse_listener: Optional[mouse.Listener] = None
@@ -132,21 +135,60 @@ class Recorder:
         self.queue.put(("status", "idle"))
         self.queue.put(("stopped",))
 
-    def add_comment(self, text: str):
+    def add_comment(self, text: str, after_index: Optional[int] = None):
         if not text:
             return
         with self._lock:
-            if self.state != "recording":
+            self._input_blocked = False
+            if self.state not in ("recording", "paused"):
                 return
-            step = Step(
-                index=len(self.steps) + 1,
+
+            if after_index is None:
+                insert_pos = len(self.steps)
+            elif after_index == 0:
+                insert_pos = 0
+            else:
+                insert_pos = len(self.steps)
+                for i, s in enumerate(self.steps):
+                    if s.index == after_index:
+                        insert_pos = i + 1
+                        break
+
+            new_step = Step(
+                index=insert_pos + 1,
                 timestamp=datetime.now(),
                 step_type="comment",
                 description="Comentário do usuário",
                 comment_text=text,
             )
-            self.steps.append(step)
-            self.queue.put(("step", step))
+            self.steps.insert(insert_pos, new_step)
+
+            for i, step in enumerate(self.steps):
+                new_index = i + 1
+                if step.index != new_index:
+                    step.index = new_index
+                    if step.screenshot_path and step.click_position:
+                        try:
+                            img = Image.open(step.screenshot_path)
+                            origin = screenshot.get_virtual_screen_rect()[:2]
+                            marked = screenshot.mark_click(
+                                img, step.click_position, origin, new_index
+                            )
+                            marked.save(step.screenshot_path)
+                        except Exception:
+                            pass
+
+        self.queue.put(("step", new_step))
+
+    @contextmanager
+    def blocked_input(self):
+        with self._lock:
+            self._input_blocked = True
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._input_blocked = False
 
     def clear(self):
         with self._lock:
@@ -178,6 +220,8 @@ class Recorder:
             return
 
         with self._lock:
+            if self._input_blocked:
+                return
             if self.state != "recording":
                 return
             if self._in_gui(x, y):
@@ -223,12 +267,14 @@ class Recorder:
             return
         if key == Key.f11:
             with self._lock:
-                recording = self.state == "recording"
-            if recording:
-                self.queue.put(("comment_request",))
+                if self.state in ("recording", "paused"):
+                    self._input_blocked = True
+                    self.queue.put(("comment_request",))
             return
 
         with self._lock:
+            if self._input_blocked:
+                return
             if self.state != "recording":
                 return
 

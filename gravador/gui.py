@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from .exporter import export_html
 from .models import Step
@@ -39,6 +39,7 @@ class App:
         self.event_queue: "queue.Queue" = queue.Queue()
         self.recorder = Recorder(self.event_queue, self.temp_dir)
         self.recorder.start_listeners()
+        self.current_state = "idle"
 
         self._build_ui()
         self._update_gui_rect()
@@ -66,7 +67,8 @@ class App:
                                    command=self.stop_record)
         self.btn_stop.pack(side=tk.LEFT, padx=2)
         self.btn_comment = ttk.Button(btns, text="Comentar (F11)",
-                                      command=self.prompt_comment)
+                                      command=self.prompt_comment,
+                                      state=tk.DISABLED)
         self.btn_comment.pack(side=tk.LEFT, padx=2)
         self.btn_export = ttk.Button(btns, text="Exportar HTML",
                                      command=self.export)
@@ -122,7 +124,7 @@ class App:
         if kind == "status":
             self._set_status(ev[1])
         elif kind == "step":
-            self._add_step_row(ev[1])
+            self._refresh_tree()
         elif kind == "comment_request":
             self.prompt_comment()
         elif kind == "stopped":
@@ -131,10 +133,15 @@ class App:
             self._clear_tree()
 
     def _set_status(self, state: str):
+        self.current_state = state
         self.status_label.config(
             text=STATUS_LABELS.get(state, state),
             fg=STATUS_COLORS.get(state, "#666666"),
         )
+        if state in ("recording", "paused"):
+            self.btn_comment.config(state=tk.NORMAL)
+        else:
+            self.btn_comment.config(state=tk.DISABLED)
 
     def _add_step_row(self, step: Step):
         tlabel = TYPE_LABELS.get(step.step_type, step.step_type)
@@ -144,7 +151,14 @@ class App:
         self.tree.insert("", tk.END, iid=str(step.index),
                          values=(step.index, step.timestamp.strftime("%H:%M:%S"),
                                  tlabel, desc))
-        self.tree.yview_moveto(1.0)
+
+    def _refresh_tree(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for step in self.recorder.get_steps():
+            self._add_step_row(step)
+        if self.tree.get_children():
+            self.tree.yview_moveto(1.0)
         self.count_var.set(f"{len(self.tree.get_children())} etapas")
 
     def _clear_tree(self):
@@ -159,12 +173,92 @@ class App:
         self.recorder.stop()
 
     def prompt_comment(self):
-        text = simpledialog.askstring(
-            "Adicionar comentário", "Digite o comentário para esta etapa:",
-            parent=self.root,
-        )
-        if text is not None:
-            self.recorder.add_comment(text)
+        if self.current_state not in ("recording", "paused"):
+            return
+        steps = self.recorder.get_steps()
+        if not steps:
+            messagebox.showinfo("Gravador de Passos",
+                                "Nenhuma etapa registrada para comentar.")
+            return
+        with self.recorder.blocked_input():
+            result = self._show_comment_dialog(steps)
+        if result is None:
+            return
+        text, after_index = result
+        self.recorder.add_comment(text, after_index=after_index)
+
+    def _show_comment_dialog(self, steps):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Adicionar comentário")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.geometry("560x360")
+        dialog.minsize(480, 320)
+
+        ttk.Label(dialog,
+                  text="Inserir comentário:",
+                  padding=(12, 10, 12, 4)).pack(anchor=tk.W)
+
+        step_options = ["— Antes de todos os passos (pré-comentário) —"]
+        for s in steps:
+            tlabel = TYPE_LABELS.get(s.step_type, s.step_type)
+            desc = s.comment_text or s.keys_text or s.description
+            if len(desc) > 60:
+                desc = desc[:57] + "..."
+            step_options.append(f"Após o passo {s.index} — {tlabel}: {desc}")
+
+        step_var = tk.StringVar(value=step_options[-1])
+        combo = ttk.Combobox(dialog, textvariable=step_var,
+                             values=step_options, state="readonly",
+                             width=70)
+        combo.pack(padx=12, pady=4, fill=tk.X)
+        combo.focus_set()
+
+        ttk.Label(dialog, text="Comentário:",
+                  padding=(12, 8, 12, 4)).pack(anchor=tk.W)
+
+        text_frame = ttk.Frame(dialog, padding=(12, 0, 12, 4))
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        text_widget = tk.Text(text_frame, height=6, width=60, wrap=tk.WORD,
+                              undo=True)
+        vsb = ttk.Scrollbar(text_frame, orient=tk.VERTICAL,
+                            command=text_widget.yview)
+        text_widget.configure(yscrollcommand=vsb.set)
+        text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        result = {"value": None}
+
+        def on_ok():
+            comment_text = text_widget.get("1.0", tk.END).strip()
+            if not comment_text:
+                return
+            sel = step_var.get()
+            if sel.startswith("— Antes de todos"):
+                after_index = 0
+            else:
+                try:
+                    num_str = sel.split("—")[0].strip().split()[-1]
+                    after_index = int(num_str)
+                except (ValueError, IndexError):
+                    after_index = None
+            result["value"] = (comment_text, after_index)
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        btns = ttk.Frame(dialog, padding=(12, 4, 12, 10))
+        btns.pack(fill=tk.X)
+        ttk.Button(btns, text="Cancelar", command=on_cancel).pack(side=tk.RIGHT)
+        ttk.Button(btns, text="OK", command=on_ok).pack(
+            side=tk.RIGHT, padx=(0, 6))
+
+        dialog.bind("<Escape>", lambda e: on_cancel())
+        dialog.bind("<Control-Return>", lambda e: on_ok())
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+        self.root.wait_window(dialog)
+        return result["value"]
 
     def _ask_export_mode(self) -> Optional[tuple]:
         dialog = tk.Toplevel(self.root)
