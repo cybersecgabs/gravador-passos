@@ -24,8 +24,10 @@ STATUS_LABELS = {"idle": "Ocioso", "recording": "Gravando", "paused": "Pausado"}
 STATUS_COLORS = {"idle": "#666666", "recording": "#1e8e3e", "paused": "#e37400"}
 
 HOTKEYS_TEXT = (
-    "Atalhos:  F9 Iniciar/Pausar   |   F10 Parar e exportar   |   F11 Adicionar comentário"
+    "Atalhos:  F9 Iniciar/Pausar   |   F10 Parar e exportar   |   "
+    "F11 Adicionar comentário   |   Del Remover etapa selecionada"
 )
+DRAG_HINT = "Dica: arraste uma etapa para outra posição para reordená-la"
 
 
 class App:
@@ -40,6 +42,9 @@ class App:
         self.recorder = Recorder(self.event_queue, self.temp_dir)
         self.recorder.start_listeners()
         self.current_state = "idle"
+        self._drag_source = None
+        self._drag_start_y = 0
+        self._dragging = False
 
         self._build_ui()
         self._update_gui_rect()
@@ -73,6 +78,9 @@ class App:
         self.btn_export = ttk.Button(btns, text="Exportar HTML",
                                      command=self.export)
         self.btn_export.pack(side=tk.LEFT, padx=2)
+        self.btn_remove = ttk.Button(btns, text="Remover (Del)",
+                                     command=self._remove_selected)
+        self.btn_remove.pack(side=tk.LEFT, padx=2)
         self.btn_clear = ttk.Button(btns, text="Limpar",
                                     command=self.clear)
         self.btn_clear.pack(side=tk.LEFT, padx=2)
@@ -80,6 +88,7 @@ class App:
         help_frame = ttk.Frame(self.root, padding=(10, 0, 10, 6))
         help_frame.pack(fill=tk.X)
         ttk.Label(help_frame, text=HOTKEYS_TEXT, foreground="gray").pack(anchor=tk.W)
+        ttk.Label(help_frame, text=DRAG_HINT, foreground="#7c3aed").pack(anchor=tk.W)
 
         tree_frame = ttk.Frame(self.root, padding=10)
         tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -98,6 +107,12 @@ class App:
         self.tree.configure(yscrollcommand=vsb.set)
         self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.tree.bind("<ButtonPress-1>", self._on_tree_press)
+        self.tree.bind("<B1-Motion>", self._on_tree_motion)
+        self.tree.bind("<ButtonRelease-1>", self._on_tree_release)
+        self.tree.bind("<Delete>", lambda e: self._remove_selected())
+        self.tree.bind("<Control-Delete>", lambda e: self._remove_selected())
 
     def _update_gui_rect(self):
         try:
@@ -131,6 +146,8 @@ class App:
             self.export()
         elif kind == "cleared":
             self._clear_tree()
+        elif kind in ("reordered", "removed"):
+            self._refresh_tree()
 
     def _set_status(self, state: str):
         self.current_state = state
@@ -349,6 +366,69 @@ class App:
 
     def clear(self):
         self.recorder.clear()
+
+    def _on_tree_press(self, event):
+        self._drag_source = self.tree.identify_row(event.y)
+        self._drag_start_y = event.y
+        self._dragging = False
+
+    def _on_tree_motion(self, event):
+        if not self._drag_source:
+            return
+        if not self._dragging:
+            if abs(event.y - self._drag_start_y) > 6:
+                self._dragging = True
+                self.tree.config(cursor="hand2")
+        if self._dragging:
+            target = self.tree.identify_row(event.y)
+            if target and target != self._drag_source:
+                self.tree.selection_set(target)
+                self.tree.yview_moveto(
+                    self.tree.yview()[0]
+                    + (event.y - self._drag_start_y) / max(self.tree.winfo_height(), 1) * 0.05
+                )
+
+    def _on_tree_release(self, event):
+        source = self._drag_source
+        was_dragging = self._dragging
+        self._drag_source = None
+        self._dragging = False
+        self.tree.config(cursor="")
+        if not was_dragging or not source:
+            return
+        target = self.tree.identify_row(event.y)
+        if not target or target == source:
+            return
+        self._reorder_step(source, target)
+
+    def _reorder_step(self, source_iid, target_iid):
+        items = list(self.tree.get_children())
+        if source_iid not in items or target_iid not in items:
+            return
+        new_order = [int(iid) for iid in items]
+        source_pos = items.index(source_iid)
+        target_pos = items.index(target_iid)
+        new_order.pop(source_pos)
+        new_order.insert(target_pos, int(source_iid))
+        self.recorder.reorder_steps(new_order)
+
+    def _remove_selected(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showinfo("Gravador de Passos",
+                                "Selecione uma etapa na lista para remover.")
+            return
+        iid = selected[0]
+        try:
+            index = int(iid)
+        except ValueError:
+            return
+        if not messagebox.askyesno(
+            "Remover etapa",
+            f"Remover a etapa {index}? As etapas seguintes serão renumeradas."
+        ):
+            return
+        self.recorder.remove_step(index)
 
     def _on_close(self):
         self.recorder.stop_listeners()

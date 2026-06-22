@@ -33,7 +33,18 @@ body {
 }
 .container { max-width: 1000px; margin: 0 auto; }
 h1 { color: #7c3aed; margin: 0 0 6px 0; font-size: 26px; }
-.meta { color: #666; font-size: 13px; margin-bottom: 24px; }
+.meta {
+  color: #555;
+  font-size: 14px;
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  background: #fff;
+  border: 1px solid #e6e8eb;
+  border-left: 4px solid #7c3aed;
+  border-radius: 4px;
+}
+.meta b { color: #333; }
+.meta .sep { color: #ccc; margin: 0 8px; }
 .steps { display: flex; flex-direction: column; gap: 18px; }
 .step {
   display: flex;
@@ -110,7 +121,25 @@ def _esc(s: Optional[str]) -> str:
 
 
 def _fmt_time(dt: Optional[datetime]) -> str:
-    return dt.strftime("%H:%M:%S") if dt else "--:--:--"
+    return dt.strftime("%H:%M:%S") if dt else "—"
+
+
+def _fmt_date(dt: Optional[datetime]) -> str:
+    return dt.strftime("%d/%m/%Y %H:%M:%S") if dt else "—"
+
+
+def _build_meta(started_at: Optional[datetime],
+                ended_at: Optional[datetime],
+                step_count: int) -> str:
+    parts = [f"<b>Início:</b> {_fmt_date(started_at)}"]
+    parts.append("<span class='sep'>•</span>")
+    if ended_at:
+        parts.append(f"<b>Término:</b> {_fmt_date(ended_at)}")
+    else:
+        parts.append("<b>Término:</b> <i>Em andamento</i>")
+    parts.append("<span class='sep'>•</span>")
+    parts.append(f"{step_count} etapa(s)")
+    return "<div class='meta'>" + " ".join(parts) + "</div>"
 
 
 def _img_to_base64(path: str, max_width: int = 1280, quality: int = 85) -> Optional[str]:
@@ -218,8 +247,7 @@ def export_html(path: str, title: str, started_at: Optional[datetime],
         f"<style>{_STYLE}</style>",
         "</head><body><div class='container'>",
         f"<h1>{_esc(title)}</h1>",
-        (f"<div class='meta'>Gravação iniciada em {_fmt_time(started_at)} e "
-         f"finalizada em {_fmt_time(ended_at)} &bull; {len(steps)} etapa(s)</div>"),
+        _build_meta(started_at, ended_at, len(steps)),
         "<div class='steps'>",
     ]
     if steps:

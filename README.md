@@ -9,6 +9,8 @@ Clone do Gravador de Passos (Steps Recorder) do Windows 11, em Python.
 - Registra atalhos com Ctrl (ex.: `Ctrl+C (Copiar)`)
 - Marca o ponto do clique na screenshot com círculo vermelho + número da etapa
 - Permite adicionar comentários manuais a qualquer momento (gravando ou pausado), escolhendo **em qual etapa** o comentário será inserido
+- **Reordenar** etapas via arrastar e soltar na lista (drag and drop)
+- **Remover** etapas individualmente (botão Remover ou tecla Delete)
 - Exporta em dois modos:
   - **HTML único** com imagens embutidas em base64 (portátil, qualidade reduzida)
   - **HTML + pasta de imagens** com PNGs em resolução total (zoom nítido)
@@ -22,8 +24,9 @@ Clone do Gravador de Passos (Steps Recorder) do Windows 11, em Python.
 | `F9`   | Iniciar / Pausar / Retomar a gravação |
 | `F10`  | Parar a gravação e exportar HTML |
 | `F11`  | Adicionar comentário à etapa |
+| `Del`  | Remover a etapa selecionada |
 
-> Cliques sobre a própria janela do aplicativo são ignorados automaticamente.
+> Cliques sobre a própria janela do aplicativo são ignorados automaticamente. Etapas podem ser reordenadas arrastando com o mouse.
 
 ## Requisitos
 

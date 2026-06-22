@@ -162,21 +162,7 @@ class Recorder:
                 comment_text=text,
             )
             self.steps.insert(insert_pos, new_step)
-
-            for i, step in enumerate(self.steps):
-                new_index = i + 1
-                if step.index != new_index:
-                    step.index = new_index
-                    if step.screenshot_path and step.click_position:
-                        try:
-                            img = Image.open(step.screenshot_path)
-                            origin = screenshot.get_virtual_screen_rect()[:2]
-                            marked = screenshot.mark_click(
-                                img, step.click_position, origin, new_index
-                            )
-                            marked.save(step.screenshot_path)
-                        except Exception:
-                            pass
+            self._renumber_and_remark_locked()
 
         self.queue.put(("step", new_step))
 
@@ -197,6 +183,39 @@ class Recorder:
             self.started_at = None
             self.ended_at = None
         self.queue.put(("cleared",))
+
+    def reorder_steps(self, new_order: List[int]):
+        with self._lock:
+            index_to_step = {s.index: s for s in self.steps}
+            new_steps = [index_to_step[i] for i in new_order if i in index_to_step]
+            for s in self.steps:
+                if s.index not in new_order:
+                    new_steps.append(s)
+            self.steps = new_steps
+            self._renumber_and_remark_locked()
+        self.queue.put(("reordered",))
+
+    def remove_step(self, index: int):
+        with self._lock:
+            self.steps = [s for s in self.steps if s.index != index]
+            self._renumber_and_remark_locked()
+        self.queue.put(("removed",))
+
+    def _renumber_and_remark_locked(self):
+        for i, step in enumerate(self.steps):
+            new_index = i + 1
+            if step.index != new_index:
+                step.index = new_index
+                if step.screenshot_path and step.click_position:
+                    try:
+                        img = Image.open(step.screenshot_path)
+                        origin = screenshot.get_virtual_screen_rect()[:2]
+                        marked = screenshot.mark_click(
+                            img, step.click_position, origin, new_index
+                        )
+                        marked.save(step.screenshot_path)
+                    except Exception:
+                        pass
 
     def get_steps(self) -> List[Step]:
         with self._lock:
