@@ -13,6 +13,13 @@ from .editor import ImageEditor
 from .exporter import export_html
 from .models import Step
 from .recorder import Recorder
+from . import screenshot
+
+CAPTURE_MODES = [
+    ("fullscreen", "Tela inteira"),
+    ("window_under_cursor", "Janela sob o mouse"),
+    ("window_specific", "Janela específica..."),
+]
 
 TYPE_LABELS = {
     "left_click": "Clique esquerdo",
@@ -88,6 +95,25 @@ class App:
         self.btn_clear = ttk.Button(btns, text="Limpar",
                                     command=self.clear)
         self.btn_clear.pack(side=tk.LEFT, padx=2)
+
+        capture_frame = ttk.Frame(self.root, padding=(10, 4, 10, 2))
+        capture_frame.pack(fill=tk.X)
+        ttk.Label(capture_frame, text="Captura:").pack(side=tk.LEFT)
+        self.capture_mode_var = tk.StringVar(value="Tela inteira")
+        capture_combo = ttk.Combobox(
+            capture_frame, textvariable=self.capture_mode_var,
+            values=[m[1] for m in CAPTURE_MODES],
+            state="readonly", width=22,
+        )
+        capture_combo.pack(side=tk.LEFT, padx=4)
+        capture_combo.bind("<<ComboboxSelected>>", self._on_capture_mode_change)
+        self.btn_pick_window = ttk.Button(
+            capture_frame, text="Selecionar janela...",
+            command=self._pick_window,
+        )
+        self.target_window_label = ttk.Label(
+            capture_frame, text="", foreground="#7c3aed")
+        self._capture_frame = capture_frame
 
         help_frame = ttk.Frame(self.root, padding=(10, 0, 10, 6))
         help_frame.pack(fill=tk.X)
@@ -436,6 +462,78 @@ class App:
         ):
             return
         self.recorder.remove_step(index)
+
+    def _on_capture_mode_change(self, _event):
+        mode_text = self.capture_mode_var.get()
+        mode_key = next((k for k, v in CAPTURE_MODES if v == mode_text), "fullscreen")
+        if mode_key == "window_specific":
+            self.btn_pick_window.pack(side=tk.LEFT, padx=4)
+            self._pick_window()
+        else:
+            self.btn_pick_window.pack_forget()
+            self.target_window_label.config(text="")
+            self.recorder.set_capture_mode(mode_key)
+
+    def _pick_window(self):
+        with self.recorder.blocked_input():
+            windows = screenshot.enumerate_windows()
+        if not windows:
+            messagebox.showinfo("Gravador de Passos",
+                                "Nenhuma janela visível encontrada.")
+            return
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Selecionar janela")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.geometry("420x400")
+        dialog.minsize(300, 250)
+
+        ttk.Label(dialog, text="Selecione a janela para capturar:",
+                  padding=(10, 10, 10, 4)).pack(anchor=tk.W)
+
+        tree_frame = ttk.Frame(dialog)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=4)
+        win_tree = ttk.Treeview(tree_frame, show="tree", selectmode="browse")
+        win_tree.heading("#0", text="Janela")
+        vsb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL,
+                            command=win_tree.yview)
+        win_tree.configure(yscrollcommand=vsb.set)
+        win_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        vsb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        for hwnd, title in windows:
+            win_tree.insert("", tk.END, iid=str(hwnd), text=title)
+
+        result = {"hwnd": None}
+
+        def on_ok():
+            sel = win_tree.selection()
+            if sel:
+                result["hwnd"] = int(sel[0])
+            dialog.destroy()
+
+        def on_cancel():
+            dialog.destroy()
+
+        btns = ttk.Frame(dialog, padding=10)
+        btns.pack(fill=tk.X)
+        ttk.Button(btns, text="Cancelar", command=on_cancel).pack(side=tk.RIGHT)
+        ttk.Button(btns, text="OK", command=on_ok).pack(side=tk.RIGHT)
+
+        win_tree.bind("<Double-1>", lambda e: on_ok())
+        dialog.protocol("WM_DELETE_WINDOW", on_cancel)
+        self.root.wait_window(dialog)
+
+        if result["hwnd"]:
+            title = screenshot.get_window_title(result["hwnd"])
+            self.target_window_label.config(text=f"→ {title}")
+            self.recorder.set_capture_mode("window_specific", result["hwnd"])
+        else:
+            self.capture_mode_var.set("Tela inteira")
+            self.btn_pick_window.pack_forget()
+            self.target_window_label.config(text="")
+            self.recorder.set_capture_mode("fullscreen")
 
     def _find_step_by_iid(self, iid: str):
         try:

@@ -87,6 +87,8 @@ class Recorder:
         self.started_at: Optional[datetime] = None
         self.ended_at: Optional[datetime] = None
         self._input_blocked = False
+        self.capture_mode: str = "fullscreen"
+        self.target_hwnd: Optional[int] = None
 
         self._lock = threading.Lock()
         self._mouse_listener: Optional[mouse.Listener] = None
@@ -184,6 +186,11 @@ class Recorder:
             self.ended_at = None
         self.queue.put(("cleared",))
 
+    def set_capture_mode(self, mode: str, hwnd: Optional[int] = None):
+        with self._lock:
+            self.capture_mode = mode
+            self.target_hwnd = hwnd
+
     def reorder_steps(self, new_order: List[int]):
         with self._lock:
             index_to_step = {s.index: s for s in self.steps}
@@ -257,7 +264,9 @@ class Recorder:
             index = len(self.steps) + 1
             path = None
             try:
-                img, origin = screenshot.capture()
+                img, origin = screenshot.capture_for_mode(
+                    self.capture_mode, (int(x), int(y)), self.target_hwnd
+                )
                 marked = screenshot.mark_click(img, (x, y), origin, index)
                 path = os.path.join(
                     self.temp_dir, f"step_{index}_{int(time.time() * 1000)}.png"

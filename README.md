@@ -5,6 +5,10 @@ Clone do Gravador de Passos (Steps Recorder) do Windows 11, em Python.
 ## Funcionalidades
 
 - Registra cliques esquerdos e direitos (com screenshot no momento do clique)
+- **Três modos de captura de screenshot**:
+  - **Tela inteira** — captura todos os monitores (padrão)
+  - **Janela sob o mouse** — captura apenas a janela onde o clique ocorreu (automático)
+  - **Janela específica** — o usuário seleciona uma janela na GUI e todas as screenshots são dessa janela
 - Registra uso do teclado agrupado por campo (até Tab/Enter/clique fora do campo)
 - Registra atalhos com Ctrl (ex.: `Ctrl+C (Copiar)`)
 - Marca o ponto do clique na screenshot com círculo vermelho + número da etapa
@@ -71,7 +75,8 @@ gravador-passos/
 
 ## Notas
 
-- As screenshots são capturadas em resolução real (DPI-aware) e abrangem todos os monitores (virtual screen).
+- As screenshots são capturadas em resolução real (DPI-aware). No modo "tela inteira", abrangem todos os monitores (virtual screen).
+- Nos modos "janela", a captura é recortada para a área da janela alvo via `GetWindowRect`. Se a janela for minimizada, fechada ou inválida, cai automaticamente para o modo tela inteira.
 - No modo **HTML único**, as imagens são redimensionadas para no máximo 1280px e codificadas em JPEG para reduzir o tamanho do arquivo.
 - No modo **HTML + pasta de imagens**, os PNGs originais em resolução total são copiados para uma pasta `<nome do html>_files/` ao lado do relatório. Clique na imagem para abri-la em tamanho original.
 - Quando a opção de ZIP está ativa, é gerado um `<nome>.zip` com a mesma estrutura (HTML na raiz + pasta de imagens), pronto para envio.
