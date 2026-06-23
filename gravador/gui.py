@@ -7,7 +7,9 @@ from typing import Optional
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from PIL import Image, ImageTk
 
+from .editor import ImageEditor
 from .exporter import export_html
 from .models import Step
 from .recorder import Recorder
@@ -28,6 +30,7 @@ HOTKEYS_TEXT = (
     "F11 Adicionar comentário   |   Del Remover etapa selecionada"
 )
 DRAG_HINT = "Dica: arraste uma etapa para outra posição para reordená-la"
+THUMB_HINT = "Botão direito: miniatura   |   Duplo clique: editor de imagem"
 
 
 class App:
@@ -45,6 +48,7 @@ class App:
         self._drag_source = None
         self._drag_start_y = 0
         self._dragging = False
+        self._thumb_popup: Optional[tk.Toplevel] = None
 
         self._build_ui()
         self._update_gui_rect()
@@ -89,6 +93,7 @@ class App:
         help_frame.pack(fill=tk.X)
         ttk.Label(help_frame, text=HOTKEYS_TEXT, foreground="gray").pack(anchor=tk.W)
         ttk.Label(help_frame, text=DRAG_HINT, foreground="#7c3aed").pack(anchor=tk.W)
+        ttk.Label(help_frame, text=THUMB_HINT, foreground="gray").pack(anchor=tk.W)
 
         tree_frame = ttk.Frame(self.root, padding=10)
         tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -113,6 +118,8 @@ class App:
         self.tree.bind("<ButtonRelease-1>", self._on_tree_release)
         self.tree.bind("<Delete>", lambda e: self._remove_selected())
         self.tree.bind("<Control-Delete>", lambda e: self._remove_selected())
+        self.tree.bind("<ButtonPress-3>", self._on_tree_right_click)
+        self.tree.bind("<Double-Button-1>", self._on_tree_double_click)
 
     def _update_gui_rect(self):
         try:
@@ -430,7 +437,88 @@ class App:
             return
         self.recorder.remove_step(index)
 
+    def _find_step_by_iid(self, iid: str):
+        try:
+            index = int(iid)
+        except ValueError:
+            return None
+        for s in self.recorder.get_steps():
+            if s.index == index:
+                return s
+        return None
+
+    def _on_tree_right_click(self, event):
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        step = self._find_step_by_iid(iid)
+        if not step or not step.screenshot_path:
+            return
+        if not os.path.isfile(step.screenshot_path):
+            return
+        self._show_thumbnail(step.screenshot_path, event.x_root, event.y_root)
+
+    def _show_thumbnail(self, path: str, x: int, y: int):
+        self._close_thumbnail()
+        try:
+            img = Image.open(path)
+        except Exception:
+            return
+        max_w, max_h = 420, 320
+        ratio = min(max_w / img.width, max_h / img.height, 1.0)
+        if ratio < 1.0:
+            img = img.resize(
+                (int(img.width * ratio), int(img.height * ratio)),
+                Image.LANCZOS,
+            )
+        popup = tk.Toplevel(self.root)
+        popup.overrideredirect(True)
+        photo = ImageTk.PhotoImage(img)
+        label = tk.Label(popup, image=photo, bd=1, relief=tk.SOLID,
+                         bg="#333333")
+        label.pack()
+        popup._photo = photo
+
+        screen_w = popup.winfo_screenwidth()
+        screen_h = popup.winfo_screenheight()
+        px = min(x + 12, screen_w - img.width - 10)
+        py = min(y + 12, screen_h - img.height - 10)
+        popup.geometry(f"+{max(0, px)}+{max(0, py)}")
+
+        popup.bind("<Button-1>", lambda e: self._close_thumbnail())
+        label.bind("<Button-1>", lambda e: self._close_thumbnail())
+        popup.bind("<Leave>", lambda e: self._close_thumbnail())
+        self._thumb_popup = popup
+
+    def _close_thumbnail(self):
+        if self._thumb_popup:
+            self._thumb_popup.destroy()
+            self._thumb_popup = None
+
+    def _on_tree_double_click(self, event):
+        self._drag_source = None
+        self._dragging = False
+        self._close_thumbnail()
+        iid = self.tree.identify_row(event.y)
+        if not iid:
+            return
+        step = self._find_step_by_iid(iid)
+        if not step:
+            return
+        if not step.screenshot_path or not os.path.isfile(step.screenshot_path):
+            messagebox.showinfo(
+                "Gravador de Passos",
+                "Esta etapa não possui screenshot para editar.")
+            return
+        with self.recorder.blocked_input():
+            editor = ImageEditor(
+                self.root, step.screenshot_path,
+                on_save=lambda _p: self._refresh_tree(),
+            )
+            self.root.wait_window(editor.top)
+
     def _on_close(self):
+        self._close_thumbnail()
         self.recorder.stop_listeners()
         try:
             shutil.rmtree(self.temp_dir, ignore_errors=True)

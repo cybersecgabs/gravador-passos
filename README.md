@@ -11,6 +11,8 @@ Clone do Gravador de Passos (Steps Recorder) do Windows 11, em Python.
 - Permite adicionar comentários manuais a qualquer momento (gravando ou pausado), escolhendo **em qual etapa** o comentário será inserido
 - **Reordenar** etapas via arrastar e soltar na lista (drag and drop)
 - **Remover** etapas individualmente (botão Remover ou tecla Delete)
+- **Miniatura** da screenshot ao clicar com botão direito numa etapa
+- **Editor de imagem** ao dar duplo clique numa etapa: formas, setas, texto, lápis, cores e espessuras personalizadas, com desfazer/resetar
 - Exporta em dois modos:
   - **HTML único** com imagens embutidas em base64 (portátil, qualidade reduzida)
   - **HTML + pasta de imagens** com PNGs em resolução total (zoom nítido)
@@ -26,7 +28,7 @@ Clone do Gravador de Passos (Steps Recorder) do Windows 11, em Python.
 | `F11`  | Adicionar comentário à etapa |
 | `Del`  | Remover a etapa selecionada |
 
-> Cliques sobre a própria janela do aplicativo são ignorados automaticamente. Etapas podem ser reordenadas arrastando com o mouse.
+> Cliques sobre a própria janela do aplicativo são ignorados automaticamente. Etapas podem ser reordenadas arrastando com o mouse. Botão direito exibe miniatura; duplo clique abre o editor de imagem.
 
 ## Requisitos
 
