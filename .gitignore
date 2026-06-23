@@ -9,6 +9,11 @@ gravacao_*.html
 gravacao_*.zip
 *_files/
 
+# PyInstaller (artefatos de build — o .exe final vai em GitHub Releases)
+build/
+dist/
+*.spec
+
 # Ambiente virtual
 venv/
 .venv/
